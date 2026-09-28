@@ -45,7 +45,7 @@ final class SafariAuthTests: XCTestCase {
             open(base + "/#passkeys")
             shot("02-passkeys-and-phone")
             tapWebButton("Add a passkey on this device")
-            confirmSystemSheet("03-passkey-sheet")
+            confirmSystemSheet("03-passkey-sheet", timeout: 8)
             XCTAssertTrue(waitWebText(containing: "Passkey added", timeout: 40), "passkey was not added")
             shot("04-passkey-added")
         }
@@ -196,15 +196,20 @@ final class SafariAuthTests: XCTestCase {
         return nil
     }
 
-    /// The system passkey sheet: tap its confirm button. Face ID is matched by the workflow's notifyutil loop.
+    /// The system passkey sheet ("Add a passkey?" / "Sign in with passkey?"). It is a remote view of the
+    /// AuthenticationServices agent, not part of Safari's tree. Face ID is matched by the workflow's notifyutil loop.
+    private let agents = ["com.apple.AuthenticationServicesCore.AuthenticationServicesAgent",
+                          "com.apple.AuthenticationServicesUI.AuthenticationServicesUIService",
+                          "com.apple.springboard"]
     private func confirmSystemSheet(_ name: String, timeout: TimeInterval = 20) {
-        let labels = ["Continue", "Sign In", "Save", "Use Passkey", "Save Passkey", "Create Passkey"]
+        let labels = ["Add Passkey", "Continue", "Sign In", "Use Passkey", "Save Passkey", "Save", "Create Passkey"]
+        let apps = [safari] + agents.map { XCUIApplication(bundleIdentifier: $0) }
         let deadline = Date().addingTimeInterval(timeout)
+        sleep(2)
         while Date() < deadline {
-            for app in [safari, springboard] {
+            for app in apps {
                 for label in labels {
                     let b = app.buttons[label]
-                    // not a button inside the web page with the same name
                     if b.exists && b.isHittable && !web.buttons[label].exists {
                         shot(name)
                         b.tap()
@@ -214,7 +219,9 @@ final class SafariAuthTests: XCTestCase {
             }
             usleep(500_000)
         }
-        shot(name + "-no-sheet")
+        // Not reachable through accessibility: tap where the sheet's primary button sits.
+        shot(name + "-coordinate-tap")
+        XCUIApplication(bundleIdentifier: "com.apple.springboard").coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.86)).tap()
     }
 
     // MARK: - the "laptop": a separate browser session, headless
