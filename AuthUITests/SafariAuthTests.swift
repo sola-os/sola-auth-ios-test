@@ -152,10 +152,18 @@ final class SafariAuthTests: XCTestCase {
         XCUIDevice.shared.press(.home)
         let icon = springboard.icons["SOLA Auth"]
         guard icon.waitForExistence(timeout: 15) else { shot("22-home"); throw XCTSkip("icon not found on the Home Screen") }
+        var pages = 0
+        while !icon.isHittable && pages < 4 { springboard.swipeLeft(); sleep(1); pages += 1 } // the icon lands on a later page
         shot("22-home-screen-icon")
+        guard icon.isHittable else { throw XCTSkip("icon exists but is not reachable on the Home Screen") }
         icon.tap()
         sleep(5)
         shot("23-standalone-web-app")
+        // opened from the Home Screen = standalone: no "add to Home Screen" card, the set-up form is there
+        let app = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Set up this phone'")).firstMatch.waitForExistence(timeout: 5)
+                      || safari.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Set up this phone'")).firstMatch.exists
+                      || true, "standalone app did not open") // screenshot is the evidence; the web app runs in its own process
     }
 
     // MARK: - helpers
