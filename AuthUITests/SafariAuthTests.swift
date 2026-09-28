@@ -95,12 +95,11 @@ final class SafariAuthTests: XCTestCase {
             let requestId = start.body["requestId"] as? String ?? ""
             XCTAssertEqual(code.count, 6)
             XCTAssertTrue(waitWebText(containing: "Sign-in request", timeout: 30), "the request did not show on the phone")
-            shot("12-phone-request")
-            let input = web.textFields["code from the sign-in screen"]
-            XCTAssertTrue(input.waitForExistence(timeout: 10))
-            input.tap()
-            input.typeText(code)
-            tapWebButton("Approve with Face ID")
+            // compare mode (like ID Austria): the phone shows the laptop's code; the person checks it and approves
+            let spaced = String(code.prefix(3)) + " " + String(code.suffix(3))
+            XCTAssertTrue(waitWebText(containing: spaced, timeout: 10), "the phone does not show the laptop's code \(spaced)")
+            shot("12-phone-request-shows-code")
+            tapWebButton("Yes - approve with Face ID")
             confirmSystemSheet("13-approve-sheet")
             XCTAssertTrue(waitWebText(containing: "Approved", timeout: 40), "approval not confirmed on the phone")
             shot("14-phone-approved")
@@ -115,7 +114,7 @@ final class SafariAuthTests: XCTestCase {
             let start = laptop2.call("POST", "/api/phone-login/start", json: ["username": ""])
             let requestId = start.body["requestId"] as? String ?? ""
             XCTAssertTrue(waitWebText(containing: "Sign-in request", timeout: 30))
-            tapWebButton("Deny")
+            tapWebButton("No - deny")
             confirmSystemSheet("15-deny-sheet")
             XCTAssertTrue(waitWebText(containing: "Denied", timeout: 40), "deny not confirmed on the phone")
             shot("16-phone-denied")
