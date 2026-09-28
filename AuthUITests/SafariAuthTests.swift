@@ -127,10 +127,18 @@ final class SafariAuthTests: XCTestCase {
     /// Home Screen install is best effort: iOS UI for it differs between versions.
     func test2_AddToHomeScreen() throws {
         open(base + "/authenticator/")
-        let share = safari.buttons["Share"]
-        guard share.waitForExistence(timeout: 15) else { throw XCTSkip("no Share button found") }
+        // iOS 26 Safari keeps Share in the "More" (...) menu.
+        var share = safari.buttons["Share"]
+        if !share.waitForExistence(timeout: 5) {
+            let more = safari.buttons["More"]
+            if more.waitForExistence(timeout: 10) { more.tap(); shot("20-more-menu") }
+            share = safari.buttons["Share"].exists ? safari.buttons["Share"] : safari.descendants(matching: .any).matching(NSPredicate(format: "label == 'Share'")).firstMatch
+        }
+        guard share.waitForExistence(timeout: 10) else { shot("20-no-share"); throw XCTSkip("no Share button found") }
         share.tap()
-        var add = safari.buttons["Add to Home Screen"]
+        sleep(2)
+        shot("20-share-sheet")
+        var add = safari.descendants(matching: .any).matching(NSPredicate(format: "label == 'Add to Home Screen'")).firstMatch
         if !add.waitForExistence(timeout: 5) { add = safari.cells["Add to Home Screen"] }
         var tries = 0
         while !add.exists && tries < 4 { safari.swipeUp(); tries += 1; add = safari.buttons["Add to Home Screen"].exists ? safari.buttons["Add to Home Screen"] : safari.cells["Add to Home Screen"] }
