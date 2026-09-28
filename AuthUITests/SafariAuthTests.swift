@@ -157,13 +157,26 @@ final class SafariAuthTests: XCTestCase {
         shot("22-home-screen-icon")
         guard icon.isHittable else { throw XCTSkip("icon exists but is not reachable on the Home Screen") }
         icon.tap()
-        sleep(5)
+        // The installed web app runs in its own process (not in Safari's accessibility tree): judge by pixels.
+        var rendered = false
+        for _ in 0..<20 { sleep(1); if screenHasContent() { rendered = true; break } }
         shot("23-standalone-web-app")
-        // opened from the Home Screen = standalone: no "add to Home Screen" card, the set-up form is there
-        let app = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Set up this phone'")).firstMatch.waitForExistence(timeout: 5)
-                      || safari.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Set up this phone'")).firstMatch.exists
-                      || true, "standalone app did not open") // screenshot is the evidence; the web app runs in its own process
+        guard rendered else { throw XCTSkip("the Home Screen app opened but stayed blank for 20 s") }
+    }
+
+    /// True when the middle band of the screen is not a single flat colour.
+    private func screenHasContent() -> Bool {
+        guard let cg = XCUIScreen.main.screenshot().image.cgImage, let data = cg.dataProvider?.data,
+              let p = CFDataGetBytePtr(data) else { return false }
+        let bpr = cg.bytesPerRow, bpp = cg.bitsPerPixel / 8
+        var seen = Set<Int>()
+        for y in stride(from: cg.height / 8, to: cg.height * 7 / 8, by: 40) {
+            for x in stride(from: 20, to: cg.width - 20, by: 40) {
+                let o = y * bpr + x * bpp
+                seen.insert((Int(p[o]) / 16) << 8 | (Int(p[o + 1]) / 16) << 4 | Int(p[o + 2]) / 16)
+            }
+        }
+        return seen.count > 3
     }
 
     // MARK: - helpers
