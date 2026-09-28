@@ -30,7 +30,15 @@ final class SafariAuthTests: XCTestCase {
 
         XCTContext.runActivity(named: "sign in with the throwaway user's one-time link") { _ in
             open(login)
+            // Safari's first launch can still be busy (Start Page); wait for the link page or HQ itself,
+            // and press "Sign in" when Safari got the scanner-safe confirmation page.
+            let signIn = web.buttons["Sign in"]
+            let deadline = Date().addingTimeInterval(45)
+            while Date() < deadline && !signIn.exists && !waitWebText(containing: "SOLA", timeout: 1) { }
+            if signIn.exists { signIn.tap(); sleep(3) }
             shot("01-signed-in-by-link")
+            open(base + "/api/me")
+            XCTAssertTrue(waitWebText(containing: "\"authenticated\":true", timeout: 30), "the one-time link did not sign Safari in")
         }
 
         XCTContext.runActivity(named: "register a passkey (Face ID)") { _ in
