@@ -1,0 +1,40 @@
+name: SolaAuthIOSTest
+options:
+  bundleIdPrefix: at.sola.authtest
+  deploymentTarget:
+    iOS: "17.0"
+targets:
+  Host:
+    type: application
+    platform: iOS
+    sources: [Host]
+    info:
+      path: Host/Info.plist
+      properties:
+        UILaunchScreen: {}
+        CFBundleDisplayName: AuthTestHost
+    settings:
+      base:
+        CODE_SIGNING_ALLOWED: "NO"
+        GENERATE_INFOPLIST_FILE: "YES"
+        SWIFT_VERSION: "5.0"
+  AuthUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [AuthUITests]
+    dependencies:
+      - target: Host
+    settings:
+      base:
+        CODE_SIGNING_ALLOWED: "NO"
+        GENERATE_INFOPLIST_FILE: "YES"
+        TEST_TARGET_NAME: Host
+        SWIFT_VERSION: "5.0"
+schemes:
+  AuthUITests:
+    build:
+      targets:
+        Host: all
+        AuthUITests: [test]
+    test:
+      targets: [AuthUITests]

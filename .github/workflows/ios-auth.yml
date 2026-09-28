@@ -1,0 +1,94 @@
+name: ios-auth
+
+# Manual only. Drives Safari on an iPhone simulator against a DISPOSABLE SOLA HQ test instance
+# (empty database, one throwaway user). The instance URL and its bootstrap secret are repository
+# secrets; nothing here points at a real HQ.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-auth
+  cancel-in-progress: false
+
+jobs:
+  safari:
+    runs-on: macos-15
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Xcode, XcodeGen, simulator
+        run: |
+          set -euo pipefail
+          latest=$(ls -d /Applications/Xcode_*.app | grep -v -i beta | sort -V | tail -1)
+          sudo xcode-select -s "$latest"
+          xcodebuild -version
+          brew install xcodegen >/dev/null
+          runtime=$(xcrun simctl list runtimes -j | jq -r '[.runtimes[] | select(.platform=="iOS" and .isAvailable)] | sort_by(.version) | last | .identifier')
+          dtype=$(xcrun simctl list devicetypes -j | jq -r '[.devicetypes[] | select(.name|test("^iPhone 1[5-9]( Pro)?$"))] | last | .identifier')
+          echo "runtime=$runtime devicetype=$dtype"
+          UDID=$(xcrun simctl create sola-auth-iphone "$dtype" "$runtime")
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+
+      - name: Enrol Face ID in the simulator
+        run: |
+          xcrun simctl spawn "$UDID" notifyutil -s com.apple.BiometricKit.enrollmentChanged '1'
+          xcrun simctl spawn "$UDID" notifyutil -p com.apple.BiometricKit.enrollmentChanged
+
+      - name: Build
+        run: |
+          set -o pipefail
+          xcodegen generate
+          xcodebuild build-for-testing -project SolaAuthIOSTest.xcodeproj -scheme AuthUITests \
+            -destination "id=$UDID" -derivedDataPath build | tail -25
+
+      - name: Test (Safari in the simulator = phone, URLSession in the test = laptop)
+        env:
+          AUTH_BASE_URL: ${{ secrets.AUTH_TEST_BASE_URL }}
+          AUTH_BOOTSTRAP: ${{ secrets.AUTH_TEST_BOOTSTRAP_SECRET }}
+          AUTH_EMAIL: ${{ secrets.AUTH_TEST_EMAIL }}
+        run: |
+          set -o pipefail
+          # Face ID: answer every prompt with a matching face while the test runs.
+          ( while true; do xcrun simctl spawn "$UDID" notifyutil -p com.apple.BiometricKit_Sim.pearl.match >/dev/null 2>&1; sleep 1; done ) &
+          matcher=$!
+          LOGIN_URL=$(curl -fsS -H "X-Sola-Bootstrap-Secret: $AUTH_BOOTSTRAP" --get --data-urlencode "email=$AUTH_EMAIL" \
+            "$AUTH_BASE_URL/api/login/magic-link" | jq -r .loginUrl)
+          echo "::add-mask::$LOGIN_URL"
+          export TEST_RUNNER_AUTH_BASE_URL="$AUTH_BASE_URL" TEST_RUNNER_AUTH_LOGIN_URL="$LOGIN_URL"
+          status=0
+          xcodebuild test-without-building -project SolaAuthIOSTest.xcodeproj -scheme AuthUITests \
+            -destination "id=$UDID" -derivedDataPath build -resultBundlePath results.xcresult 2>&1 \
+            | grep -E "Test Case|error|failed|passed|skipped|XCTAssert|Activity" | tail -80 || status=$?
+          kill "$matcher" || true
+          xcrun simctl io "$UDID" screenshot final.png || true
+          grep -q . <(xcrun xcresulttool get test-results summary --path results.xcresult 2>/dev/null) && \
+            xcrun xcresulttool get test-results summary --path results.xcresult | jq '{result, passedTests, failedTests, skippedTests}' || true
+          test "$(xcrun xcresulttool get test-results summary --path results.xcresult | jq -r .result)" = "Passed"
+
+      - name: Screenshots
+        if: always()
+        run: |
+          mkdir -p shots
+          xcrun xcresulttool export attachments --path results.xcresult --output-path shots >/dev/null 2>&1 || true
+          # name the files after their attachment names
+          if [ -f shots/manifest.json ]; then
+            jq -r '.[].attachments[] | [.exportedFileName, .suggestedHumanReadableName] | @tsv' shots/manifest.json | \
+              while IFS=$'\t' read -r f n; do [ -f "shots/$f" ] && mv "shots/$f" "shots/${n// /_}" ; done
+          fi
+          cp final.png shots/ 2>/dev/null || true
+          ls shots | head -60
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: ios-auth-screenshots
+          path: shots/
+          retention-days: 14
