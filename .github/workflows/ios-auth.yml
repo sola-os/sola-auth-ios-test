@@ -76,12 +76,14 @@ jobs:
       - name: Screenshots
         if: always()
         run: |
-          mkdir -p shots
-          xcrun xcresulttool export attachments --path results.xcresult --output-path shots >/dev/null 2>&1 || true
-          # name the files after their attachment names
-          if [ -f shots/manifest.json ]; then
-            jq -r '.[].attachments[] | [.exportedFileName, .suggestedHumanReadableName] | @tsv' shots/manifest.json | \
-              while IFS=$'\t' read -r f n; do [ -f "shots/$f" ] && mv "shots/$f" "shots/${n// /_}" ; done
+          mkdir -p raw shots
+          xcrun xcresulttool export attachments --path results.xcresult --output-path raw >/dev/null 2>&1 || true
+          # keep screenshots and text attachments, named after the attachment, with file-system-safe names
+          if [ -f raw/manifest.json ]; then
+            jq -r '.[].attachments[] | [.exportedFileName, .suggestedHumanReadableName] | @tsv' raw/manifest.json | \
+              while IFS=$'\t' read -r f n; do
+                case "$f" in *.png|*.txt) safe=$(printf '%s' "$n" | tr -c 'A-Za-z0-9._-' '_'); cp "raw/$f" "shots/${safe}.${f##*.}";; esac
+              done
           fi
           cp final.png shots/ 2>/dev/null || true
           ls shots | head -60

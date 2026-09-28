@@ -159,7 +159,13 @@ final class SafariAuthTests: XCTestCase {
 
     private func tapWebButton(_ label: String, timeout: TimeInterval = 30) {
         let b = web.buttons[label]
-        XCTAssertTrue(b.waitForExistence(timeout: timeout), "no button '\(label)'")
+        if !b.waitForExistence(timeout: timeout) {
+            shot("missing-" + label)
+            let tree = XCTAttachment(string: safari.debugDescription)
+            tree.name = "tree-missing-" + label; tree.lifetime = .keepAlways; add(tree)
+            XCTFail("no button '\(label)'")
+            return
+        }
         let enabled = expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: b)
         wait(for: [enabled], timeout: timeout)
         b.tap()
