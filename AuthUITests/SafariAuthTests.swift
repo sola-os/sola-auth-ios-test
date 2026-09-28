@@ -219,9 +219,36 @@ final class SafariAuthTests: XCTestCase {
             }
             usleep(500_000)
         }
-        // Not reachable through accessibility: tap where the sheet's primary button sits.
-        shot(name + "-coordinate-tap")
-        XCUIApplication(bundleIdentifier: "com.apple.springboard").coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.86)).tap()
+        // Not reachable through accessibility: find the sheet's filled blue primary button in the screenshot
+        // (scanning up from the bottom at the button's left edge, where there is no text) and tap it.
+        shot(name + "-pixel-tap")
+        let y = primaryButtonY() ?? 0.86
+        XCUIApplication(bundleIdentifier: "com.apple.springboard").coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: y)).tap()
+    }
+
+    private func primaryButtonY() -> CGFloat? {
+        guard let cg = XCUIScreen.main.screenshot().image.cgImage, let data = cg.dataProvider?.data,
+              let p = CFDataGetBytePtr(data) else { return nil }
+        let bpr = cg.bytesPerRow, bpp = cg.bitsPerPixel / 8
+        let x = Int(Double(cg.width) * 0.15)
+        var y = Int(Double(cg.height) * 0.97)
+        while y > cg.height / 2 {
+            let o = y * bpr + x * bpp
+            let a = Int(p[o]), g = Int(p[o + 1]), b = Int(p[o + 2])
+            let blue = g > 90 && g < 170 && ((a < 70 && b > 200) || (b < 70 && a > 200))
+            if blue {
+                var top = y
+                while top > 0 {
+                    let q = (top - 1) * bpr + x * bpp
+                    let a2 = Int(p[q]), g2 = Int(p[q + 1]), b2 = Int(p[q + 2])
+                    if !(g2 > 90 && g2 < 170 && ((a2 < 70 && b2 > 200) || (b2 < 70 && a2 > 200))) { break }
+                    top -= 1
+                }
+                return CGFloat(y + top) / 2 / CGFloat(cg.height)
+            }
+            y -= 2
+        }
+        return nil
     }
 
     // MARK: - the "laptop": a separate browser session, headless
